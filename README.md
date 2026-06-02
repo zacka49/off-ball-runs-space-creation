@@ -34,7 +34,7 @@ Metrica ask users to acknowledge the source when using the data publicly.
   - passing-lane congestion improvement,
   - final-third endpoint.
 - Run labels: run in behind, underlap, wide stretch, decoy/lane opener and support run.
-- Beginner-friendly Streamlit app with separate pages for getting started, visualisations, run exploration, player profiles, coach reports and method notes.
+- Beginner-friendly Streamlit app with separate pages for getting started, visualisations, Tuchel system fit, run exploration, player profiles, coach reports and method notes.
 - Command-line script to export detected runs and a run map.
 
 ## Project Structure
@@ -92,6 +92,7 @@ D:\AI projects\football-projects\off-ball-runs-space-creation\.venv\Scripts\pyth
 
 - `Start Here`: the default page for a first-time user, with the headline results, best example and coach notes.
 - `Visualisations`: pitch run maps, start/end heatmaps, timing charts, player leaderboards and run-type breakdowns.
+- `Tuchel Fit`: ranks players against a Thomas Tuchel / England tactical framework using vertical threat, lane creation, wide threat, half-space threat, final-third threat and repeatable intensity.
 - `Run Explorer`: filter runs by player, type and score, then inspect individual examples on the pitch.
 - `Player Profiles`: summarise which players repeatedly create off-ball value.
 - `Coach Report`: turn the output into a short analyst-style report and download the run table.
@@ -113,6 +114,21 @@ Outputs are written to `outputs/`:
 Use this as a short case study:
 
 > I built a tracking-data model to detect off-ball runs and estimate space creation. The model is explainable: each run is scored using speed, forward progression, defender separation, line-breaking movement and lane congestion. The output is designed for a coach or analyst reviewing off-ball behaviour, not just for a data science notebook.
+
+## England / Tuchel Fit Lens
+
+The `Tuchel Fit` page is an England-specific tactical lens layered onto the tracking model. Because the Metrica sample data anonymises players, the app ranks sample players by role fit rather than real England names. With England tracking data, the same scoring framework can be applied directly to named players.
+
+The score uses public tactical research on Thomas Tuchel: his flexibility across back-three and 4-2-3-1 structures, his use of wing-backs and inside attackers, and his England brief around a physical, attacking, Premier League-reflective team.
+
+The role-fit framework rewards:
+
+- Vertical threat and runs in behind.
+- Lane creation and decoy movement.
+- Wide-channel and wing-back style running.
+- Half-space running for inside-forward or attacking-midfield roles.
+- Final-third arrivals.
+- Repeatable high-intensity running.
 
 ## Next Improvements
 

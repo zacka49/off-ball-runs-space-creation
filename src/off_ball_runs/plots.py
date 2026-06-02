@@ -192,3 +192,93 @@ def plot_run_type_breakdown(summary: pd.DataFrame, title: str) -> plt.Figure:
             fontsize=9,
         )
     return fig
+
+
+def plot_tuchel_fit_leaderboard(fit_table: pd.DataFrame, title: str) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(10.5, 6))
+    ax.set_title(title, loc="left", fontsize=14, fontweight="bold")
+    if fit_table.empty:
+        ax.text(0.5, 0.5, "No Tuchel-fit scores available", ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    frame = fit_table.sort_values("tuchel_fit_score", ascending=True).tail(10)
+    colours = np.where(frame["best_role"].str.contains("wide", case=False), "#16a34a", "#2563eb")
+    ax.barh(frame["player"], frame["tuchel_fit_score"], color=colours, alpha=0.88)
+    ax.set_xlabel("Tuchel fit score")
+    ax.set_xlim(0, 100)
+    ax.grid(axis="x", alpha=0.22)
+    for _, row in frame.iterrows():
+        ax.text(
+            row["tuchel_fit_score"] + 1,
+            row["player"],
+            row["best_role"].split(" / ")[0],
+            va="center",
+            fontsize=8.5,
+            color="#374151",
+        )
+    return fig
+
+
+def plot_tuchel_trait_radar(row: pd.Series, title: str) -> plt.Figure:
+    traits = [
+        "vertical_threat",
+        "lane_creation",
+        "wide_threat",
+        "half_space_threat",
+        "final_third_threat",
+        "repeatable_intensity",
+    ]
+    labels = [
+        "Vertical",
+        "Lane creation",
+        "Wide",
+        "Half-space",
+        "Final third",
+        "Intensity",
+    ]
+    values = [float(row[trait]) for trait in traits]
+    angles = np.linspace(0, 2 * np.pi, len(traits), endpoint=False).tolist()
+    values += values[:1]
+    angles += angles[:1]
+
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw={"polar": True})
+    ax.set_title(title, fontsize=14, fontweight="bold", pad=18)
+    ax.plot(angles, values, color="#2563eb", linewidth=2.4)
+    ax.fill(angles, values, color="#2563eb", alpha=0.2)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, 100)
+    ax.set_yticks([20, 40, 60, 80, 100])
+    ax.grid(alpha=0.28)
+    return fig
+
+
+def plot_tuchel_role_matrix(role_matrix: pd.DataFrame, title: str) -> plt.Figure:
+    fig, ax = plt.subplots(figsize=(11, 6))
+    ax.set_title(title, loc="left", fontsize=14, fontweight="bold")
+    if role_matrix.empty:
+        ax.text(0.5, 0.5, "No role matrix available", ha="center", va="center", transform=ax.transAxes)
+        return fig
+
+    frame = role_matrix.head(10).set_index("player")
+    values = frame.to_numpy(dtype=float)
+    image = ax.imshow(values, cmap="YlGnBu", aspect="auto", vmin=0, vmax=100)
+    ax.set_xticks(range(len(frame.columns)))
+    ax.set_xticklabels(frame.columns, rotation=25, ha="right")
+    ax.set_yticks(range(len(frame.index)))
+    ax.set_yticklabels(frame.index)
+
+    for row_index in range(values.shape[0]):
+        for col_index in range(values.shape[1]):
+            ax.text(
+                col_index,
+                row_index,
+                f"{values[row_index, col_index]:.0f}",
+                ha="center",
+                va="center",
+                fontsize=8,
+                color="#0f172a",
+            )
+
+    fig.colorbar(image, ax=ax, fraction=0.035, pad=0.02, label="Role fit score")
+    return fig

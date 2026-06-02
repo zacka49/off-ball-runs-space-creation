@@ -21,7 +21,11 @@ from off_ball_runs.plots import (
     plot_run_density,
     plot_run_type_breakdown,
     plot_score_timeline,
+    plot_tuchel_fit_leaderboard,
+    plot_tuchel_role_matrix,
+    plot_tuchel_trait_radar,
 )
+from off_ball_runs.tuchel import tuchel_fit_table, tuchel_notes, tuchel_role_matrix
 
 
 PRESETS = {
@@ -69,6 +73,20 @@ FRIENDLY_COLUMNS = {
     "main_run_type": "Main run type",
     "final_third_runs": "Final-third runs",
     "lane_opening_runs": "Lane-opening runs",
+    "tuchel_fit_score": "Tuchel fit",
+    "best_role": "Best Tuchel role",
+    "vertical_threat": "Vertical threat",
+    "lane_creation": "Lane creation",
+    "wide_threat": "Wide threat",
+    "half_space_threat": "Half-space threat",
+    "final_third_threat": "Final-third threat",
+    "repeatable_intensity": "Repeatable intensity",
+    "avg_score": "Avg run score",
+    "avg_speed": "Avg speed",
+    "run_in_behind": "Runs in behind",
+    "lane_openers": "Lane openers",
+    "wide_runs": "Wide runs",
+    "half_space_runs": "Half-space runs",
     "run_type": "Run type",
     "start_time_s": "Start, seconds",
     "end_time_s": "End, seconds",
@@ -138,6 +156,7 @@ with st.sidebar:
         [
             "Start Here",
             "Visualisations",
+            "Tuchel Fit",
             "Run Explorer",
             "Player Profiles",
             "Coach Report",
@@ -228,6 +247,7 @@ ordered = sorted_runs(runs)
 top_run = ordered.iloc[0]
 players = player_summary(runs)
 types = run_type_summary(runs)
+tuchel_fit = tuchel_fit_table(runs)
 
 metric_cols = st.columns(3)
 metric_cols[0].metric("Runs", f"{len(runs):,}")
@@ -350,6 +370,122 @@ elif page == "Visualisations":
                 st.pyplot(plot_player_leaderboard(visual_players, "Player leaderboard"), clear_figure=True)
             with right:
                 st.pyplot(plot_run_type_breakdown(visual_types, "Run-type breakdown"), clear_figure=True)
+
+elif page == "Tuchel Fit":
+    st.subheader("England / Tuchel system fit")
+    st.write(
+        "Ranks players against a Thomas Tuchel / England tactical lens using vertical threat, lane creation, "
+        "wide and half-space running, final-third threat and repeatable intensity."
+    )
+    st.info(
+        "Metrica sample players are anonymous, so this ranks sample player profiles. With England tracking data, "
+        "the same scoring framework can rank named England players."
+    )
+
+    top_fit = tuchel_fit.iloc[0]
+    fit_cols = st.columns(4)
+    fit_cols[0].metric("Best fit", str(top_fit["player"]))
+    fit_cols[1].metric("Fit score", f"{top_fit['tuchel_fit_score']:.1f}")
+    fit_cols[2].metric("Best role", str(top_fit["best_role"]).split(" / ")[0])
+    fit_cols[3].metric("Runs analysed", f"{int(top_fit['runs'])}")
+
+    for note in tuchel_notes(tuchel_fit):
+        st.write(f"- {note}")
+
+    with st.expander("Why these traits map to Tuchel"):
+        st.write(
+            "Tuchel is a flexible coach rather than a fixed-formation coach. His previous sides have used back-three "
+            "wing-back structures and 4-2-3-1 shapes, while his England brief points toward a physical, attacking, "
+            "Premier League-reflective team. The scoring therefore rewards players who stretch the last line, create "
+            "lanes for others, attack wide and half-space channels, and repeat high-intensity actions."
+        )
+        st.caption(
+            "Source trail: England Football's Tuchel interview, UEFA's England/Tuchel profile, "
+            "BBC/Sky tactical explainers, and Coaches' Voice Tuchel analysis."
+        )
+
+    rank_tab, role_tab, player_tab, method_tab = st.tabs(
+        ["Ranking", "Role Matrix", "Player Detail", "Method"]
+    )
+
+    with rank_tab:
+        st.pyplot(plot_tuchel_fit_leaderboard(tuchel_fit, "Tuchel-fit leaderboard"), clear_figure=True)
+        ranking_cols = [
+            "player",
+            "tuchel_fit_score",
+            "best_role",
+            "vertical_threat",
+            "lane_creation",
+            "wide_threat",
+            "half_space_threat",
+            "final_third_threat",
+            "repeatable_intensity",
+            "runs",
+        ]
+        st.dataframe(friendly(tuchel_fit[ranking_cols]), use_container_width=True, hide_index=True)
+
+    with role_tab:
+        role_matrix = tuchel_role_matrix(tuchel_fit)
+        st.pyplot(plot_tuchel_role_matrix(role_matrix, "Role-fit matrix"), clear_figure=True)
+        st.write(
+            "Use this to build a balanced squad picture. A player can be a strong overall fit while still being best suited "
+            "to a specific role, such as wide runner, depth runner or connector."
+        )
+
+    with player_tab:
+        selected_fit_player = st.selectbox("Inspect player", tuchel_fit["player"].tolist())
+        player_row = tuchel_fit[tuchel_fit["player"].eq(selected_fit_player)].iloc[0]
+        st.pyplot(
+            plot_tuchel_trait_radar(player_row, f"{selected_fit_player} tactical trait profile"),
+            clear_figure=True,
+        )
+        selected_player_runs = sorted_runs(runs[runs["player"].eq(selected_fit_player)])
+        st.pyplot(plot_run_map(selected_player_runs, f"{selected_fit_player} Tuchel-fit run map"), clear_figure=True)
+        player_detail = player_row[
+            [
+                "player",
+                "tuchel_fit_score",
+                "best_role",
+                "vertical_threat",
+                "lane_creation",
+                "wide_threat",
+                "half_space_threat",
+                "final_third_threat",
+                "repeatable_intensity",
+                "run_in_behind",
+                "lane_openers",
+                "wide_runs",
+                "half_space_runs",
+                "final_third_runs",
+            ]
+        ].to_frame("value")
+        st.dataframe(friendly(player_detail), use_container_width=True)
+
+    with method_tab:
+        st.markdown(
+            """
+            **How the Tuchel-fit score is built**
+
+            - `Vertical threat`: forward movement, line-breaking, runs in behind and final-third arrivals.
+            - `Lane creation`: runs that reduce blockers between ball and runner, plus defender separation.
+            - `Wide threat`: wide-channel and wing-back style runs.
+            - `Half-space threat`: inside-channel runs suited to attacking-midfielder or inside-forward roles.
+            - `Final-third threat`: how often the player arrives in dangerous advanced zones.
+            - `Repeatable intensity`: volume of runs, average speed and average run value.
+
+            The overall score is a weighted blend, not a black box. It is designed to help an analyst shortlist clips and
+            role fits, then check the video.
+            """
+        )
+        st.markdown(
+            """
+            **How to make it fully England-specific**
+
+            - Replace the Metrica sample tracking data with England match tracking data if available.
+            - Or connect the same role framework to open event data for named England players.
+            - Keep the role scores separate from the overall score so coaches can discuss fit by position.
+            """
+        )
 
 elif page == "Player Profiles":
     st.subheader("Which players create off-ball value?")
