@@ -34,7 +34,7 @@ Metrica ask users to acknowledge the source when using the data publicly.
   - passing-lane congestion improvement,
   - final-third endpoint.
 - Run labels: run in behind, underlap, wide stretch, decoy/lane opener and support run.
-- Beginner-friendly Streamlit app with separate pages for getting started, run exploration, player profiles, coach reports and method notes.
+- Beginner-friendly Streamlit app with separate pages for getting started, visualisations, run exploration, player profiles, coach reports and method notes.
 - Command-line script to export detected runs and a run map.
 
 ## Project Structure
@@ -91,6 +91,7 @@ D:\AI projects\football-projects\off-ball-runs-space-creation\.venv\Scripts\pyth
 ## App Pages
 
 - `Start Here`: the default page for a first-time user, with the headline results, best example and coach notes.
+- `Visualisations`: pitch run maps, start/end heatmaps, timing charts, player leaderboards and run-type breakdowns.
 - `Run Explorer`: filter runs by player, type and score, then inspect individual examples on the pitch.
 - `Player Profiles`: summarise which players repeatedly create off-ball value.
 - `Coach Report`: turn the output into a short analyst-style report and download the run table.

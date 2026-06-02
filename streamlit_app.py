@@ -16,6 +16,12 @@ from off_ball_runs.model import (
     run_type_summary,
 )
 from off_ball_runs.plots import plot_run, plot_run_map
+from off_ball_runs.plots import (
+    plot_player_leaderboard,
+    plot_run_density,
+    plot_run_type_breakdown,
+    plot_score_timeline,
+)
 
 
 PRESETS = {
@@ -129,7 +135,14 @@ with st.sidebar:
     st.title("Off-Ball Runs")
     page = st.radio(
         "Page",
-        ["Start Here", "Run Explorer", "Player Profiles", "Coach Report", "Method & Settings"],
+        [
+            "Start Here",
+            "Visualisations",
+            "Run Explorer",
+            "Player Profiles",
+            "Coach Report",
+            "Method & Settings",
+        ],
     )
 
     st.divider()
@@ -281,6 +294,62 @@ elif page == "Run Explorer":
         run = filtered_ordered.loc[selected]
         st.pyplot(plot_run(game["home"], game["away"], run, direction), clear_figure=True)
         st.dataframe(friendly(filtered_ordered[DISPLAY_COLUMNS]), use_container_width=True, hide_index=True)
+
+elif page == "Visualisations":
+    st.subheader("Visualise the off-ball runs")
+    st.write(
+        "Use this page to see the story at a glance: where runs finish, when the best runs happen, "
+        "which players stand out and which run types appear most often."
+    )
+
+    visual_cols = st.columns(3)
+    visual_player_options = ["All players"] + sorted(runs["player"].unique().tolist())
+    visual_type_options = ["All run types"] + sorted(runs["run_type"].unique().tolist())
+    visual_player = visual_cols[0].selectbox("Show player", visual_player_options)
+    visual_type = visual_cols[1].selectbox("Show run type", visual_type_options)
+    visual_min_score = visual_cols[2].slider("Visual minimum score", 0, 100, 20)
+
+    visual_runs = runs.copy()
+    if visual_player != "All players":
+        visual_runs = visual_runs[visual_runs["player"].eq(visual_player)]
+    if visual_type != "All run types":
+        visual_runs = visual_runs[visual_runs["run_type"].eq(visual_type)]
+    visual_runs = visual_runs[visual_runs["space_created_score"].ge(visual_min_score)]
+
+    if visual_runs.empty:
+        st.warning("No runs match those visual filters. Lower the minimum score or choose All players.")
+    else:
+        st.caption(f"Showing {len(visual_runs)} of {len(runs)} detected runs.")
+
+        map_tab, heat_tab, timing_tab, profile_tab = st.tabs(
+            ["Run Map", "Heatmaps", "Timing", "Players & Types"]
+        )
+
+        with map_tab:
+            st.pyplot(plot_run_map(visual_runs, "Filtered run arrows"), clear_figure=True)
+
+        with heat_tab:
+            left, right = st.columns(2)
+            with left:
+                st.pyplot(plot_run_density(visual_runs, "Where runs start", point="start"), clear_figure=True)
+            with right:
+                st.pyplot(plot_run_density(visual_runs, "Where runs finish", point="end"), clear_figure=True)
+
+        with timing_tab:
+            st.pyplot(plot_score_timeline(visual_runs, "When high-value runs happen"), clear_figure=True)
+            st.write(
+                "Look for clusters: repeated high scores in a short spell can point to a tactical pattern, "
+                "a matchup advantage or a moment where the defensive line was vulnerable."
+            )
+
+        with profile_tab:
+            visual_players = player_summary(visual_runs)
+            visual_types = run_type_summary(visual_runs)
+            left, right = st.columns(2)
+            with left:
+                st.pyplot(plot_player_leaderboard(visual_players, "Player leaderboard"), clear_figure=True)
+            with right:
+                st.pyplot(plot_run_type_breakdown(visual_types, "Run-type breakdown"), clear_figure=True)
 
 elif page == "Player Profiles":
     st.subheader("Which players create off-ball value?")
