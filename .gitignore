@@ -4,4 +4,5 @@ __pycache__/
 .streamlit/
 data/
 outputs/
+*.log
 .DS_Store

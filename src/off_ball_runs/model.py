@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pandas as pd
 
 from off_ball_runs.data import (
     Direction,
+    PITCH_LENGTH_M,
+    PITCH_WIDTH_M,
     TeamName,
     frame_column,
     frame_positions,
@@ -13,6 +16,58 @@ from off_ball_runs.data import (
     player_pairs,
     time_column,
 )
+
+
+RUN_COLUMNS = [
+    "player",
+    "attacking_team",
+    "start_frame",
+    "end_frame",
+    "start_time_s",
+    "end_time_s",
+    "start_x",
+    "start_y",
+    "end_x",
+    "end_y",
+    "distance_m",
+    "max_speed_mps",
+    "x_progression_m",
+    "distance_to_ball_start_m",
+    "nearest_defender_start_m",
+    "nearest_defender_end_m",
+    "line_break_m",
+    "lane_blockers_start",
+    "lane_blockers_end",
+    "lane_improvement",
+    "space_created_score",
+    "run_type",
+]
+
+
+def empty_runs_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=RUN_COLUMNS)
+
+
+def _normalise_x(value: float | pd.Series, direction: Direction):
+    metres = value * PITCH_LENGTH_M
+    if direction == "left-to-right":
+        return metres
+    return PITCH_LENGTH_M - metres
+
+
+def _normalise_y(value: float | pd.Series):
+    return value * PITCH_WIDTH_M
+
+
+def _estimate_frame_rate(frame: pd.DataFrame) -> float:
+    fcol = frame_column(frame)
+    tcol = time_column(frame)
+    sample = frame[[fcol, tcol]].dropna().head(2000)
+    frame_delta = sample[fcol].diff().median()
+    time_delta = sample[tcol].diff().median()
+    if pd.isna(frame_delta) or pd.isna(time_delta) or time_delta <= 0:
+        return 25.0
+    return float(frame_delta / time_delta)
 
 
 def _lane_blockers(
@@ -93,7 +148,7 @@ def _run_type(row: dict[str, float | int | str]) -> str:
 
 def _deduplicate_runs(runs: pd.DataFrame) -> pd.DataFrame:
     if runs.empty:
-        return runs
+        return empty_runs_frame()
 
     selected = []
     ranked = runs.sort_values("space_created_score", ascending=False)
@@ -109,7 +164,7 @@ def _deduplicate_runs(runs: pd.DataFrame) -> pd.DataFrame:
         ]
         if not overlaps:
             selected.append(candidate.to_dict())
-    return pd.DataFrame(selected).sort_values("start_time_s").reset_index(drop=True)
+    return pd.DataFrame(selected).sort_values("start_time_s").reset_index(drop=True)[RUN_COLUMNS]
 
 
 def detect_off_ball_runs(
@@ -121,8 +176,8 @@ def detect_off_ball_runs(
     end_minute: float = 15.0,
     frame_step: int = 12,
     window_seconds: float = 2.0,
-    min_speed_mps: float = 4.8,
-    min_x_progression_m: float = 6.0,
+    min_speed_mps: float = 4.4,
+    min_x_progression_m: float = 5.0,
     min_off_ball_distance_m: float = 6.0,
 ) -> pd.DataFrame:
     """Detect high-value off-ball forward runs from tracking data.
@@ -140,21 +195,85 @@ def detect_off_ball_runs(
 
     sample = attack_frame[
         attack_frame[tcol].between(start_second, end_second, inclusive="both")
-    ].iloc[::frame_step]
+    ].iloc[::frame_step].copy()
     players = player_pairs(attack_frame)
     if sample.empty or not players:
-        return pd.DataFrame()
+        return empty_runs_frame()
+
+    frame_rate = _estimate_frame_rate(attack_frame)
+    window_frames = max(1, int(round(window_seconds * frame_rate)))
+    attack_by_frame = attack_frame.set_index(fcol, drop=False)
 
     rows: list[dict[str, float | int | str]] = []
-    for _, start_row in sample.iterrows():
-        start_time = float(start_row[tcol])
-        end_time = start_time + window_seconds
-        if end_time > end_second:
+    candidate_rows: list[tuple[str, pd.Series, pd.Series, float, float, float, float, float, float, float, float]] = []
+    for player, (x_column, y_column) in players.items():
+        if x_column not in sample.columns or y_column not in sample.columns:
             continue
 
-        end_row = attack_frame.iloc[(attack_frame[tcol] - end_time).abs().idxmin()]
+        player_sample = sample[[fcol, tcol, x_column, y_column, "Ball", "Ball.1"]].dropna(subset=[x_column, y_column])
+        if player_sample.empty:
+            continue
+
+        end_frames = player_sample[fcol] + window_frames
+        end_rows = attack_by_frame.reindex(end_frames)
+        valid = end_rows[x_column].notna() & end_rows[y_column].notna()
+        if not valid.any():
+            continue
+
+        starts = player_sample.loc[valid.to_numpy()]
+        ends = end_rows.loc[valid].reset_index(drop=True)
+        starts = starts.reset_index(drop=True)
+
+        x0 = _normalise_x(starts[x_column].astype(float), direction)
+        y0 = _normalise_y(starts[y_column].astype(float))
+        x1 = _normalise_x(ends[x_column].astype(float), direction)
+        y1 = _normalise_y(ends[y_column].astype(float))
+        distance = np.hypot(x1 - x0, y1 - y0)
+        speed = distance / max(window_seconds, 0.1)
+        x_progression = x1 - x0
+
+        candidate_mask = (speed >= min_speed_mps) & (x_progression >= min_x_progression_m)
+        if "Ball" in starts.columns and "Ball.1" in starts.columns:
+            ball_x = _normalise_x(starts["Ball"].astype(float), direction)
+            ball_y = _normalise_y(starts["Ball.1"].astype(float))
+            ball_distance = np.hypot(x0 - ball_x, y0 - ball_y)
+            candidate_mask &= ball_distance.isna() | (ball_distance >= min_off_ball_distance_m)
+        else:
+            ball_distance = pd.Series(np.nan, index=starts.index)
+
+        for index in starts.index[candidate_mask]:
+            candidate_rows.append(
+                (
+                    player,
+                    starts.loc[index],
+                    ends.loc[index],
+                    float(x0.loc[index]),
+                    float(y0.loc[index]),
+                    float(x1.loc[index]),
+                    float(y1.loc[index]),
+                    float(distance.loc[index]),
+                    float(speed.loc[index]),
+                    float(x_progression.loc[index]),
+                    float(ball_distance.loc[index]),
+                )
+            )
+
+    for (
+        player,
+        start_row,
+        end_row,
+        x0,
+        y0,
+        x1,
+        y1,
+        distance,
+        speed,
+        x_progression,
+        distance_to_ball,
+    ) in candidate_rows:
         start_frame = int(start_row[fcol])
         end_frame = int(end_row[fcol])
+        start_time = float(start_row[tcol])
         start_players, start_ball = frame_positions(home, away, start_frame, direction)
         end_players, _ = frame_positions(home, away, end_frame, direction)
 
@@ -167,65 +286,96 @@ def detect_off_ball_runs(
             continue
 
         defensive_line = float(defenders_start["x"].quantile(0.85))
+        nearest_start = nearest_distance((x0, y0), defenders_start)
+        nearest_end = nearest_distance((x1, y1), defenders_end)
+        blockers_start = _lane_blockers(start_ball, (x0, y0), defenders_start)
+        blockers_end = _lane_blockers(start_ball, (x1, y1), defenders_end)
 
-        for player in players:
-            start_player = attackers_start[attackers_start["player"].eq(player)]
-            end_player = attackers_end[attackers_end["player"].eq(player)]
-            if start_player.empty or end_player.empty:
-                continue
-
-            x0 = float(start_player.iloc[0]["x"])
-            y0 = float(start_player.iloc[0]["y"])
-            x1 = float(end_player.iloc[0]["x"])
-            y1 = float(end_player.iloc[0]["y"])
-            distance = math.hypot(x1 - x0, y1 - y0)
-            speed = distance / max(window_seconds, 0.1)
-            x_progression = x1 - x0
-
-            if speed < min_speed_mps or x_progression < min_x_progression_m:
-                continue
-
-            if start_ball is not None:
-                distance_to_ball = math.hypot(x0 - start_ball[0], y0 - start_ball[1])
-                if distance_to_ball < min_off_ball_distance_m:
-                    continue
-            else:
-                distance_to_ball = float("nan")
-
-            nearest_start = nearest_distance((x0, y0), defenders_start)
-            nearest_end = nearest_distance((x1, y1), defenders_end)
-            blockers_start = _lane_blockers(start_ball, (x0, y0), defenders_start)
-            blockers_end = _lane_blockers(start_ball, (x1, y1), defenders_end)
-
-            row: dict[str, float | int | str] = {
-                "player": player,
-                "attacking_team": attacking_team,
-                "start_frame": start_frame,
-                "end_frame": end_frame,
-                "start_time_s": round(start_time, 2),
-                "end_time_s": round(float(end_row[tcol]), 2),
-                "start_x": round(x0, 2),
-                "start_y": round(y0, 2),
-                "end_x": round(x1, 2),
-                "end_y": round(y1, 2),
-                "distance_m": round(distance, 2),
-                "max_speed_mps": round(speed, 2),
-                "x_progression_m": round(x_progression, 2),
-                "distance_to_ball_start_m": round(distance_to_ball, 2),
-                "nearest_defender_start_m": round(nearest_start, 2),
-                "nearest_defender_end_m": round(nearest_end, 2),
-                "line_break_m": round(max(0.0, x1 - defensive_line), 2),
-                "lane_blockers_start": int(blockers_start),
-                "lane_blockers_end": int(blockers_end),
-                "lane_improvement": int(blockers_start - blockers_end),
-            }
-            row["space_created_score"] = _score_run(row)
-            row["run_type"] = _run_type(row)
-            rows.append(row)
+        row: dict[str, float | int | str] = {
+            "player": player,
+            "attacking_team": attacking_team,
+            "start_frame": start_frame,
+            "end_frame": end_frame,
+            "start_time_s": round(start_time, 2),
+            "end_time_s": round(float(end_row[tcol]), 2),
+            "start_x": round(x0, 2),
+            "start_y": round(y0, 2),
+            "end_x": round(x1, 2),
+            "end_y": round(y1, 2),
+            "distance_m": round(distance, 2),
+            "max_speed_mps": round(speed, 2),
+            "x_progression_m": round(x_progression, 2),
+            "distance_to_ball_start_m": round(distance_to_ball, 2),
+            "nearest_defender_start_m": round(nearest_start, 2),
+            "nearest_defender_end_m": round(nearest_end, 2),
+            "line_break_m": round(max(0.0, x1 - defensive_line), 2),
+            "lane_blockers_start": int(blockers_start),
+            "lane_blockers_end": int(blockers_end),
+            "lane_improvement": int(blockers_start - blockers_end),
+        }
+        row["space_created_score"] = _score_run(row)
+        row["run_type"] = _run_type(row)
+        rows.append(row)
 
     if not rows:
-        return pd.DataFrame()
+        return empty_runs_frame()
     return _deduplicate_runs(pd.DataFrame(rows))
+
+
+def player_summary(runs: pd.DataFrame) -> pd.DataFrame:
+    if runs.empty:
+        return pd.DataFrame(
+            columns=[
+                "player",
+                "runs",
+                "average_score",
+                "top_score",
+                "main_run_type",
+                "final_third_runs",
+                "lane_opening_runs",
+            ]
+        )
+
+    summary = (
+        runs.assign(
+            final_third=runs["end_x"].ge(70).astype(int),
+            lane_opening=runs["lane_improvement"].gt(0).astype(int),
+        )
+        .groupby("player", as_index=False)
+        .agg(
+            runs=("player", "size"),
+            average_score=("space_created_score", "mean"),
+            top_score=("space_created_score", "max"),
+            final_third_runs=("final_third", "sum"),
+            lane_opening_runs=("lane_opening", "sum"),
+        )
+    )
+
+    run_type = (
+        runs.groupby("player")["run_type"]
+        .agg(lambda values: values.value_counts().index[0])
+        .reset_index(name="main_run_type")
+    )
+    return (
+        summary.merge(run_type, on="player", how="left")
+        .sort_values(["top_score", "runs"], ascending=False)
+        .reset_index(drop=True)
+    )
+
+
+def run_type_summary(runs: pd.DataFrame) -> pd.DataFrame:
+    if runs.empty:
+        return pd.DataFrame(columns=["run_type", "runs", "average_score", "top_score"])
+    return (
+        runs.groupby("run_type", as_index=False)
+        .agg(
+            runs=("run_type", "size"),
+            average_score=("space_created_score", "mean"),
+            top_score=("space_created_score", "max"),
+        )
+        .sort_values(["runs", "average_score"], ascending=False)
+        .reset_index(drop=True)
+    )
 
 
 def coach_notes(runs: pd.DataFrame) -> list[str]:

@@ -48,9 +48,24 @@ def load_events(path: str | Path) -> pd.DataFrame:
     return frame
 
 
+def _normalise_tracking_columns(columns: list[str]) -> list[str]:
+    """Rename Metrica's blank y-coordinate headers into explicit .1 pairs."""
+
+    normalised = list(columns)
+    for index, column in enumerate(columns[:-1]):
+        is_entity_x = re.fullmatch(r"Player\d+", column) or column in {"Ball", "ball"}
+        if not is_entity_x:
+            continue
+
+        next_column = columns[index + 1]
+        if next_column.startswith("Unnamed:") or next_column == "":
+            normalised[index + 1] = f"{column}.1"
+    return normalised
+
+
 def load_tracking(path: str | Path) -> pd.DataFrame:
     frame = pd.read_csv(path, skiprows=2)
-    frame.columns = [str(column).strip() for column in frame.columns]
+    frame.columns = _normalise_tracking_columns([str(column).strip() for column in frame.columns])
     frame = frame.dropna(how="all")
     return frame
 

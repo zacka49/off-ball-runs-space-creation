@@ -34,7 +34,7 @@ Metrica ask users to acknowledge the source when using the data publicly.
   - passing-lane congestion improvement,
   - final-third endpoint.
 - Run labels: run in behind, underlap, wide stretch, decoy/lane opener and support run.
-- Streamlit dashboard with run map, individual run audit, table and coach notes.
+- Beginner-friendly Streamlit app with separate pages for getting started, run exploration, player profiles, coach reports and method notes.
 - Command-line script to export detected runs and a run map.
 
 ## Project Structure
@@ -64,6 +64,37 @@ streamlit run streamlit_app.py
 ```
 
 On macOS/Linux, use `source .venv/bin/activate` instead of the Windows activation command.
+
+Do not run the app with `python streamlit_app.py`. Streamlit apps should be launched with `streamlit run`.
+
+## VS Code Workflow
+
+Open the project folder in VS Code:
+
+```powershell
+code "D:\AI projects\football-projects\off-ball-runs-space-creation"
+```
+
+Then open a new VS Code terminal and run:
+
+```powershell
+.\.venv\Scripts\activate
+streamlit run streamlit_app.py
+```
+
+If VS Code asks for an interpreter, select:
+
+```text
+D:\AI projects\football-projects\off-ball-runs-space-creation\.venv\Scripts\python.exe
+```
+
+## App Pages
+
+- `Start Here`: the default page for a first-time user, with the headline results, best example and coach notes.
+- `Run Explorer`: filter runs by player, type and score, then inspect individual examples on the pitch.
+- `Player Profiles`: summarise which players repeatedly create off-ball value.
+- `Coach Report`: turn the output into a short analyst-style report and download the run table.
+- `Method & Settings`: explain the score and check that the tracking data has been parsed correctly.
 
 ## Command-Line Run
 
